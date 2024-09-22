@@ -1,99 +1,157 @@
+import io.qameta.allure.Step;
 import io.qameta.allure.junit4.DisplayName;
 import io.restassured.RestAssured;
+import io.restassured.response.Response;
 import org.example.Courier;
 import org.example.CourierLoginModel;
 import org.example.RandomStringGenerator;
-import org.hamcrest.CoreMatchers;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.*;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.CoreMatchers.instanceOf;
 
+@RunWith(Parameterized.class)
 public class LoginCourierTest {
 
-    private Courier courier;
+    private static Courier courier;
 
-    @Before
-    public void setUp() {
+    private final CourierLoginModel courierLoginModel;
+    private final Integer statusCode;
+    private final String message;
+    private final Boolean isLoginSuccessful;
+
+    public LoginCourierTest(CourierLoginModel courierLoginModel, Integer statusCode, String message, Boolean isLoginSuccessful) {
+        this.courierLoginModel = courierLoginModel;
+        this.statusCode = statusCode;
+        this.message = message;
+        this.isLoginSuccessful = isLoginSuccessful;
+    }
+
+    @Parameterized.Parameters
+    public static Object[][] getParameters() {
         RestAssured.baseURI = "https://qa-scooter.praktikum-services.ru/api/v1";
+        if (courier == null) {
+            String firstName = RandomStringGenerator.generateFirstName();
+            String login = RandomStringGenerator.generateLogin();
+            String password = RandomStringGenerator.generatePassword();
+            courier = new Courier(login, password, firstName);
+            createCourier(courier);
+        }
+        return new Object[][]{
+                {CourierLoginModel.fromCourier(courier), 200, null, true},
+                {new CourierLoginModel(courier.getLogin(), ""), 400, "Недостаточно данных для входа", null},
+                {new CourierLoginModel("", courier.getPassword()), 400, "Недостаточно данных для входа", null},
+                {new CourierLoginModel("", ""), 400, "Недостаточно данных для входа", null},
+                {new CourierLoginModel(courier.getLogin(), "wrongPassword"), 404, "Учетная запись не найдена", null},
+                {new CourierLoginModel("wrongLogin", courier.getPassword()), 404, "Учетная запись не найдена", null}
+        };
+    }
 
-        String firstName = RandomStringGenerator.generateFirstName();
-        String login = RandomStringGenerator.generateLogin();
-        String password = RandomStringGenerator.generatePassword();
-
-        courier = new Courier(login, password, firstName);
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(courier)
-                .when()
-                .post("/courier");
+    @BeforeClass
+    public static void setUp() {
+        RestAssured.baseURI = "https://qa-scooter.praktikum-services.ru/api/v1";
     }
 
     @Test
-    @DisplayName("Курьер может авторизоваться, успешный запрос возвращает id")
+    @DisplayName("Проверяем возможность входа")
     public void testLogin() {
-        CourierLoginModel loginModel = new CourierLoginModel(courier.getLogin(), courier.getPassword());
+            checkLogin(courierLoginModel, statusCode, message, isLoginSuccessful);
+    }
 
-        given()
+    @AfterClass
+    public static void tearDown() {
+        Response response = loginCourier(CourierLoginModel.fromCourier(courier));
+        if (response.statusCode() == 200) {
+            Integer courierId = getCourierId(response);
+
+            Response deleteResponse = sendDeleteRequest(courierId);
+            checkStatusCode(deleteResponse, 200);
+            checkBoolean(deleteResponse, "ok", true);
+        }
+    }
+
+    @Step("Отправляем post запрос")
+    private static Response sendRequest(Object obj, String uri) {
+        return given()
                 .header("Content-Type", "application/json")
                 .and()
-                .body(loginModel)
+                .body(obj)
                 .when()
-                .post("/courier/login")
+                .post(uri);
+    }
+
+    @Step("Создаём курьера")
+    private static void createCourier(Courier courier) {
+        sendRequest(courier, "/courier");
+    }
+
+    @Step("Логиним курьера")
+    private static Response loginCourier(CourierLoginModel courierModel) {
+        return sendRequest(courierModel, "/courier/login");
+    }
+
+    @Step("Проверяем тип возвлащаемого поля")
+    private static void checkType(Response response, String fieldName, Class<?> expectedType) {
+        Class<?> aClass = response
                 .then()
-                .statusCode(200)
-                .body("id", instanceOf(Integer.class));
+                .extract()
+                .response()
+                .jsonPath()
+                .get(fieldName)
+                .getClass();
+        Assert.assertEquals(expectedType, aClass);
     }
 
-    @Test
-    @DisplayName("Для авторизации нужно передать все обязательные поля, если какого-то поля нет, запрос возвращает ошибку")
-    public void testLoginWithEmptyRequiredFields() {
-        CourierLoginModel invalidPasswordLoginModel = new CourierLoginModel(courier.getLogin(), "");
-        CourierLoginModel invalidLoginLoginModel = new CourierLoginModel("", courier.getPassword());
-        CourierLoginModel invalidBothLoginModel = new CourierLoginModel("", "");
+    @Step("Проверяем код ответа")
+    private static void checkStatusCode(Response response, Integer expectedStatusCode) {
+        response.then().statusCode(expectedStatusCode);
+    }
 
-        Object[][] responses = {
-                {invalidPasswordLoginModel, 400, "Недостаточно данных для входа"},
-                {invalidLoginLoginModel, 400, "Недостаточно данных для входа"},
-                {invalidBothLoginModel, 400, "Недостаточно данных для входа"}
-        };
+    @Step("Проверяем текст сообщения")
+    private static void checkMessage(Response response, String expectedField, String expectedMessage) {
+        checkType(response, expectedField, String.class);
+        response.then().body(expectedField, equalTo(expectedMessage));
+    }
 
-        for (Object[] item : responses) {
-            given()
-                    .header("Content-Type", "application/json")
-                    .and()
-                    .body(item[0])
-                    .when()
-                    .post("/courier/login")
-                    .then()
-                    .statusCode((Integer) item[1])
-                    .body("message", equalTo(item[2]));
+    @Step("Проверяем возможность входа, статус ответса и сообщение")
+    private void checkLogin(CourierLoginModel model, Integer statusCode, String message, Boolean isLoginSuccessful) {
+        Response response = loginCourier(model);
+        checkStatusCode(response, statusCode);
+
+        if (message != null) {
+            checkMessage(response, "message", message);
+        }
+
+        if (isLoginSuccessful != null) {
+            checkType(response, "id", Integer.class);
         }
     }
 
-    @Test
-    @DisplayName("Система вернёт ошибку, если неправильно указать логин (несуществующий пользователь) или пароль")
-    public void testLoginWithWrongCredentials() {
-        CourierLoginModel wrongPasswordLoginModel = new CourierLoginModel(courier.getLogin(), "wrongPassword");
-        CourierLoginModel wrongLoginLoginModel = new CourierLoginModel("wrongLogin", courier.getPassword());
-
-        Object[][] responses = {
-                {wrongPasswordLoginModel, 404, "Учетная запись не найдена"},
-                {wrongLoginLoginModel, 404, "Учетная запись не найдена"}
-        };
-        for (Object[] item : responses) {
-            given()
-                    .header("Content-Type", "application/json")
-                    .and()
-                    .body(item[0])
-                    .when()
-                    .post("/courier/login")
-                    .then()
-                    .statusCode((Integer) item[1])
-                    .body("message", equalTo(item[2]));
-        }
+    @Step("Получаем ID курьера")
+    private static Integer getCourierId(Response response) {
+        return response
+                .then()
+                .extract()
+                .response()
+                .jsonPath()
+                .get("id");
     }
+
+    @Step("Удаляем курьера")
+    private static Response sendDeleteRequest(Integer courierId) {
+        return given()
+                .header("Content-Type", "application/json")
+                .when()
+                .delete("/courier/" + courierId);
+    }
+
+    @Step("Проверяем boolean")
+    private static void checkBoolean(Response response, String fieldName, Boolean expectedBoolean) {
+        checkType(response, fieldName, Boolean.class);
+        response.then().body(fieldName, equalTo(expectedBoolean));
+    }
+
+
 }

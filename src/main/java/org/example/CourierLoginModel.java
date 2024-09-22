@@ -16,4 +16,8 @@ public class CourierLoginModel {
     public String getPassword() {
         return password;
     }
+
+    public static CourierLoginModel fromCourier(Courier courier) {
+        return new CourierLoginModel(courier.getLogin(), courier.getPassword());
+    }
 }
