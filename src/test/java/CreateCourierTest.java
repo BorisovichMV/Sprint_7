@@ -1,3 +1,4 @@
+import io.qameta.allure.junit4.DisplayName;
 import io.restassured.RestAssured;
 import org.example.Courier;
 import org.example.RandomStringGenerator;
@@ -9,17 +10,21 @@ import static org.hamcrest.CoreMatchers.equalTo;
 
 public class CreateCourierTest {
 
+    String firstName;
+    String login;
+    String password;
+
     @Before
     public void setup() {
-        RestAssured.baseURI = "https://qa-scooter.praktikum-services.ru";
+        RestAssured.baseURI = "https://qa-scooter.praktikum-services.ru/api/v1";
+        firstName = RandomStringGenerator.generateFirstName();
+        login = RandomStringGenerator.generateLogin();
+        password = RandomStringGenerator.generatePassword();
     }
 
     @Test
+    @DisplayName("Курьера можно создать, успешный запрос возвращает ok: true")
     public void testCourierCanToCreate() {
-        String firstName = RandomStringGenerator.generateFirstName();
-        String login = RandomStringGenerator.generateLogin();
-        String password = RandomStringGenerator.generatePassword();
-
         Courier courier = new Courier(login, password, firstName);
 
         given()
@@ -27,168 +32,104 @@ public class CreateCourierTest {
                 .and()
                 .body(courier)
                 .when()
-                .post("/api/v1/courier")
+                .post("/courier")
                 .then()
-                .statusCode(201);
-    }
-
-    @Test
-    public void testCreationSameCouriersNotAllowed() {
-        String firstName = RandomStringGenerator.generateFirstName();
-        String login = RandomStringGenerator.generateLogin();
-        String password = RandomStringGenerator.generatePassword();
-
-        Courier courier = new Courier(login, password, firstName);
-
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(courier)
-                .when()
-                .post("/api/v1/courier")
-                .then()
-                .statusCode(201);
-
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(courier)
-                .when()
-                .post("/api/v1/courier")
-                .then()
-                .statusCode(409);
-    }
-
-    @Test
-    public void testRequiredFields() {
-        String firstName = RandomStringGenerator.generateFirstName();
-        String login = RandomStringGenerator.generateLogin();
-        String password = RandomStringGenerator.generatePassword();
-
-        Courier validCourier = new Courier(login, password, null);
-        Courier invalidPasswordCourier = new Courier(login, null, firstName);
-        Courier invalidLoginCourier = new Courier(null, password, firstName);
-
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(invalidLoginCourier)
-                .when()
-                .post("/api/v1/courier")
-                .then()
-                .statusCode(400);
-
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(invalidPasswordCourier)
-                .when()
-                .post("/api/v1/courier")
-                .then()
-                .statusCode(400);
-
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(validCourier)
-                .when()
-                .post("/api/v1/courier")
-                .then()
-                .statusCode(201);
-    }
-
-    @Test
-    public void testCreationReturnsRightCode() {
-        String firstName = RandomStringGenerator.generateFirstName();
-        String login = RandomStringGenerator.generateLogin();
-        String password = RandomStringGenerator.generatePassword();
-
-        Courier validCourier = new Courier(login, password, null);
-        Courier invalidPasswordCourier = new Courier(login, null, firstName);
-        Courier invalidLoginCourier = new Courier(null, password, firstName);
-
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(invalidLoginCourier)
-                .when()
-                .post("/api/v1/courier")
-                .then()
-                .statusCode(400);
-
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(invalidPasswordCourier)
-                .when()
-                .post("/api/v1/courier")
-                .then()
-                .statusCode(400);
-
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(validCourier)
-                .when()
-                .post("/api/v1/courier")
-                .then()
-                .statusCode(201);
-
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(validCourier)
-                .when()
-                .post("/api/v1/courier")
-                .then()
-                .statusCode(409);
-    }
-
-    @Test
-    public void testCreationReturnsRightMessage() {
-        String firstName = RandomStringGenerator.generateFirstName();
-        String login = RandomStringGenerator.generateLogin();
-        String password = RandomStringGenerator.generatePassword();
-
-        Courier courier = new Courier(login, password, firstName);
-
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(courier)
-                .when()
-                .post("/api/v1/courier")
-                .then()
+                .statusCode(201)
                 .body("ok", equalTo(true));
     }
 
     @Test
-    public void testCreationReturnsRightMessageWithExistingFields() {
-        String firstName = RandomStringGenerator.generateFirstName();
-        String anotherFirstName = RandomStringGenerator.generateFirstName();
-        String login = RandomStringGenerator.generateLogin();
-        String anotherPassword = RandomStringGenerator.generatePassword();
-        String password = RandomStringGenerator.generatePassword();
-
+    @DisplayName("Нельзя создать двух одинаковых курьеров")
+    public void testCreationSameCouriersNotAllowed() {
         Courier courier = new Courier(login, password, firstName);
-        Courier anotherCourier = new Courier(login, anotherPassword, anotherFirstName);
 
+        Integer[] statusCodes = {201, 409};
+        for (Integer statusCode : statusCodes) {
         given()
                 .header("Content-Type", "application/json")
                 .and()
                 .body(courier)
                 .when()
-                .post("/api/v1/courier")
+                .post("/courier")
                 .then()
-                .statusCode(201);
+                .statusCode(statusCode);
+        }
+    }
 
-        given()
-                .header("Content-Type", "application/json")
-                .and()
-                .body(anotherCourier)
-                .when()
-                .post("/api/v1/courier")
-                .then()
-                .statusCode(409);
+    @Test
+    @DisplayName("Чтобы создать курьера, нужно передать в ручку все обязательные поля")
+    public void testRequiredFields() {
+        Courier validCourier = new Courier(login, password, null);
+        Courier invalidPasswordCourier = new Courier(login, null, firstName);
+        Courier invalidLoginCourier = new Courier(null, password, firstName);
+
+        Object[][] couriers = {
+                {validCourier, 201},
+                {invalidPasswordCourier, 400},
+                {invalidLoginCourier, 400}
+        };
+
+        for (Object[] item : couriers) {
+            given()
+                    .header("Content-Type", "application/json")
+                    .and()
+                    .body(item[0])
+                    .when()
+                    .post("/courier")
+                    .then()
+                    .statusCode((Integer) item[1]);
+        }
+    }
+
+    @Test
+    @DisplayName("Запросы возвращают правильный код ответа")
+    public void testCreationReturnsRightCode() {
+        Courier validCourier = new Courier(login, password, null);
+        Courier invalidPasswordCourier = new Courier(login, null, firstName);
+        Courier invalidLoginCourier = new Courier(null, password, firstName);
+
+        Object[][] couriers = {
+                {invalidLoginCourier, 400},
+                {invalidPasswordCourier, 400},
+                {validCourier, 201},
+                {validCourier, 409}
+        };
+
+        for (Object[] item : couriers) {
+            given()
+                    .header("Content-Type", "application/json")
+                    .and()
+                    .body(item[0])
+                    .when()
+                    .post("/courier")
+                    .then()
+                    .statusCode((Integer) item[1]);
+        }
+    }
+
+    @Test
+    @DisplayName("Если создать пользователя с логином, который уже есть, возвращается ошибка")
+    public void testCreationReturnsRightMessageWithExistingFields() {
+        String anotherFirstName = RandomStringGenerator.generateFirstName();
+        String anotherPassword = RandomStringGenerator.generatePassword();
+
+        Courier courier = new Courier(login, password, firstName);
+        Courier anotherCourier = new Courier(login, anotherPassword, anotherFirstName);
+
+        Object[][] couriers = {
+                {courier, 201},
+                {anotherCourier, 409}
+        };
+
+        for (Object[] item : couriers) {
+            given()
+                    .header("Content-Type", "application/json")
+                    .and()
+                    .body(item[0])
+                    .when()
+                    .post("/courier")
+                    .then()
+                    .statusCode((Integer) item[1]);
+        }
     }
 }
